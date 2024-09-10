@@ -1,11 +1,10 @@
 // ==UserScript==
 // @name         About Me Translator
 // @namespace    http://tampermonkey.net/
-// @version      0.7
+// @version      1.1
 // @description  Translate users' about me on moderation page
 // @author       Kyrylo Shykunov
-// @match        https://admin.ddkit.io/about-me-moderation
-// @match        https://admin.ddkit.dev/about-me-moderation
+// @match        *://*/about-me-moderation
 // @grant        GM_xmlhttpRequest
 // ==/UserScript==
 
@@ -25,7 +24,9 @@ const TARGET_LANG = 'uk';
             translatedText += sentenceArray[0]; // The translated sentence is the first item in each sub-array
         });
 
-        return translatedText;
+        const detectedLang = response[2]; // Google Translate's detected language
+
+        return { translatedText, detectedLang };
     }
 
     // Function to translate text using Google Translate API
@@ -37,8 +38,12 @@ const TARGET_LANG = 'uk';
             url: translateUrl,
             onload: function (response) {
                 try {
-                    const translatedText = processTranslationResponse(response.responseText);
-                    callback(translatedText);
+                    const { translatedText, detectedLang } = processTranslationResponse(response.responseText);
+
+                    // Only call the callback if the source language is different from the target language
+                    if (detectedLang !== TARGET_LANG) {
+                        callback(translatedText);
+                    }
                 } catch (e) {
                     console.error('Translation failed:', e);
                 }
@@ -49,29 +54,31 @@ const TARGET_LANG = 'uk';
         });
     }
 
-    // Function to translate the content of specific divs and append the translation
-    function translateUsersAboutMe() {
-        const divs = document.querySelectorAll('[class^="AboutMeCard_aboutMe__"]');
+    // Function to check and translate text inside AboutMeCard_mainInfo__ divs
+    function checkAndTranslate() {
+        const mainInfoDivs = document.querySelectorAll('[class^="AboutMeCard_aboutMe__"]');
 
-        divs.forEach((div) => {
-            const originalText = div.innerText.trim();
+        mainInfoDivs.forEach((mainInfoDiv) => {
+            // Get the p tag for source text
+            const sourceTextElement = mainInfoDiv.querySelector('p');
+            // Get the translation div
+            const translationDiv = mainInfoDiv.querySelector('[class^="AboutMeCard_translate__"]');
 
-            // Translate the text
-            translateText(originalText, (translatedText) => {
-                // Create a new div with the translated text
-                const translatedDiv = document.createElement('div');
-                translatedDiv.className = div.className; // Apply the same class for styling consistency
-                translatedDiv.style.marginTop = '10px'; // Add some space between original and translated
+            if (sourceTextElement && translationDiv && !translationDiv.innerText.trim()) {
+                const sourceText = sourceTextElement.innerText.trim();
 
-                // Add translated text to the new div
-                translatedDiv.innerText = translatedText;
-
-                // Append the translated text below the original div
-                div.parentNode.insertBefore(translatedDiv, div.nextSibling);
-            });
+                // Ignore if sourceText is empty or has a length of 1
+                if (sourceText.length > 1) {
+                    // Translate the text and place it in the translation block
+                    translateText(sourceText, (translatedText) => {
+                        translationDiv.innerText = translatedText;
+                        translationDiv.style.display = 'block'; // Ensure the translated div is visible
+                    });
+                }
+            }
         });
     }
 
-    // Fallback: If elements are already present, run the translation after 5 seconds
-    setTimeout(translateUsersAboutMe, 5000);
+    // Continuously check for new elements every second and translate if needed
+    setInterval(checkAndTranslate, 1000);
 })();
